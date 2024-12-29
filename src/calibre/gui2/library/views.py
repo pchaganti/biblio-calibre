@@ -1655,8 +1655,11 @@ class BooksView(QTableView):  # {{{
             index = self.moveCursor(move_by, Qt.KeyboardModifier.NoModifier)
             if index.isValid():
                 def edit():
-                    self.setCurrentIndex(index)
-                    self.edit(index)
+                    if index.isValid():
+                        self.setCurrentIndex(index)
+                        self.edit(index)
+                        # This is needed for https://bugs.launchpad.net/calibre/+bug/2092643
+                        self._model.current_changed(index, None)
                 QTimer.singleShot(0, edit)
         return ans
 
