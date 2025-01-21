@@ -5,6 +5,7 @@ __license__   = 'GPL v3'
 __copyright__ = '2012, Kovid Goyal <kovid at kovidgoyal.net>'
 __docformat__ = 'restructuredtext en'
 
+import datetime
 import importlib
 import json
 import os
@@ -12,14 +13,14 @@ import posixpath
 import sys
 import traceback
 from io import BytesIO
-from typing import Sequence
+from typing import NamedTuple, Sequence
 
 from calibre import prints
 from calibre.constants import iswindows, numeric_version
 from calibre.devices.errors import PathError
 from calibre.devices.mtp.base import debug
 from calibre.devices.mtp.defaults import DeviceDefaults
-from calibre.devices.mtp.filesystem_cache import FileOrFolder
+from calibre.devices.mtp.filesystem_cache import FileOrFolder, convert_timestamp
 from calibre.ptempfile import PersistentTemporaryDirectory, SpooledTemporaryFile
 from calibre.utils.filenames import shorten_components_to
 from calibre.utils.icu import lower as icu_lower
@@ -35,6 +36,13 @@ class MTPInvalidSendPathError(PathError):
     def __init__(self, folder):
         PathError.__init__(self, 'Trying to send to ignored folder: %s'%folder)
         self.folder = folder
+
+
+class ListEntry(NamedTuple):
+    name: str
+    is_folder: bool
+    size: int
+    mtime: datetime.datetime
 
 
 class MTP_DEVICE(BASE):
@@ -377,6 +385,14 @@ class MTP_DEVICE(BASE):
         f = self.filesystem_cache.resolve_mtp_id_path(path)
         self.get_mtp_file(f, outfile)
 
+    def get_file_by_name(self, outfile, parent: FileOrFolder, *names: str) -> None:
+        ' Get the file parent/ + "/".join(names) and put it into outfile. Works with files not cached in FilesystemCache. '
+        self.get_mtp_file_by_name(parent, *names, stream=outfile)
+
+    def list_folder_by_name(self, parent: FileOrFolder, *names: str) ->tuple[ListEntry, ...]:
+        ' List the contents of the folder parent/ + "/".join(names). Works with folders not cached in FilesystemCache. '
+        return tuple(ListEntry(x['name'], x['is_folder'], x['size'], convert_timestamp(x['modified'])) for x in self.list_mtp_folder_by_name(parent, *names))
+
     def prepare_addable_books(self, paths):
         tdir = PersistentTemporaryDirectory('_prepare_mtp')
         ans = []
@@ -708,14 +724,16 @@ def main():
         dev.set_progress_reporter(prints)
         dev.open(cd, None)
         dev.filesystem_cache.dump()
+        print(dev.device_debug_info(), flush=True)
         docs = dev.prefix_for_location(None)
         print('Prefix for main mem:', docs, flush=True)
-        entries = dev.list_mtp_folder_by_name(dev.filesystem_cache.entries[0], docs)
+        entries = dev.list_folder_by_name(dev.filesystem_cache.entries[0], docs)
         pprint(entries)
-        pprint(dev.get_mtp_metadata_by_name(dev.filesystem_cache.entries[0], docs, entries[0]['name']))
-        files = [x for x in entries if not x['is_folder']]
-        with dev.get_mtp_file_by_name(dev.filesystem_cache.entries[0], docs, files[0]['name']) as f:
-            print('Got', files[0]['name'], 'of size:', len(f.read()))
+        pprint(dev.get_mtp_metadata_by_name(dev.filesystem_cache.entries[0], docs, entries[0].name))
+        files = [x for x in entries if not x.is_folder]
+        f = io.BytesIO()
+        dev.get_file_by_name(f, dev.filesystem_cache.entries[0], docs, files[0].name)
+        print('Got', files[0].name, 'of size:', len(f.getvalue()))
     except Exception:
         import traceback
         traceback.print_exc()
