@@ -143,9 +143,13 @@ class TagTreeItem:  # {{{
                                 if node.type != self.TAG or node.type == self.ROOT:
                                     break
                             if val_icon is None and TEMPLATE_ICON_INDICATOR in self.value_icons[category]:
-                                t = self.eval_formatter.safe_format(self.value_icons[category][TEMPLATE_ICON_INDICATOR][0],
-                                                                    {'category': category, 'value': self.tag.original_name},
-                                                                    'VALUE_ICON_TEMPLATE_ERROR', {})
+                                v = {'category': category, 'value': self.tag.original_name,
+                                     'count': getattr(self.tag, 'count', ''),
+                                     'avg_rating': getattr(self.tag, 'avg_rating', '')}
+                                from calibre.gui2.ui import get_gui
+                                db = get_gui().current_db
+                                t = self.eval_formatter.safe_format(
+                                    self.value_icons[category][TEMPLATE_ICON_INDICATOR][0], v, 'VALUE_ICON_TEMPLATE_ERROR', {}, database=db)
                                 if t:
                                     val_icon = (os.path.join('template_icons', t), False)
                                 else:
@@ -406,8 +410,8 @@ class TagsModel(QAbstractItemModel):  # {{{
         self.filter_categories_by = None
         self.collapse_model = 'disable'
         self.row_map = []
-        self.root_item = self.create_node(icon_map=self.icon_state_map)
         self.db = None
+        self.root_item = self.create_node(icon_map=self.icon_state_map)
         self._build_in_progress = False
         self.reread_collapse_model({}, rebuild=False)
         self.show_error_after_event_loop_tick_signal.connect(self.on_show_error_after_event_loop_tick, type=Qt.ConnectionType.QueuedConnection)
