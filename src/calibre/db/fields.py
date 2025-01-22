@@ -7,9 +7,9 @@ __docformat__ = 'restructuredtext en'
 
 import sys
 from collections import Counter, defaultdict
+from collections.abc import Iterable
 from functools import partial
 from threading import Lock
-from typing import Iterable
 
 from calibre.db.tables import MANY_MANY, MANY_ONE, ONE_ONE, null
 from calibre.db.utils import atof, force_to_bool
@@ -64,9 +64,10 @@ class Field:
     is_many_many = False
     is_composite = False
 
-    def __init__(self, name, table, bools_are_tristate, get_template_functions):
+    def __init__(self, name, table, bools_are_tristate, get_template_functions, db_weakref):
         self.name, self.table = name, table
         dt = self.metadata['datatype']
+        self.db_weakref = db_weakref  # this can be an instance of either Cache or LibraryDatabase
         self.has_text_data = dt in {'text', 'comments', 'series', 'enumeration'}
         self.table_type = self.table.table_type
         self._sort_key = (sort_key if dt in ('text', 'series', 'enumeration') else IDENTITY)
@@ -237,8 +238,8 @@ class CompositeField(OneToOneField):
     is_composite = True
     SIZE_SUFFIX_MAP = {suffix:i for i, suffix in enumerate(('', 'K', 'M', 'G', 'T', 'P', 'E'))}
 
-    def __init__(self, name, table, bools_are_tristate, get_template_functions):
-        OneToOneField.__init__(self, name, table, bools_are_tristate, get_template_functions)
+    def __init__(self, name, table, bools_are_tristate, get_template_functions, db_weakref):
+        super().__init__(name, table, bools_are_tristate, get_template_functions, db_weakref)
 
         self._render_cache = {}
         self._lock = Lock()
@@ -297,11 +298,12 @@ class CompositeField(OneToOneField):
 
     def __render_composite(self, book_id, mi, formatter, template_cache):
         ' INTERNAL USE ONLY. DO NOT USE THIS OUTSIDE THIS CLASS! '
+        db = self.db_weakref()
         ans = formatter.safe_format(
             self.metadata['display']['composite_template'], mi, _('TEMPLATE ERROR'),
             mi, column_name=self._composite_name, template_cache=template_cache,
             template_functions=self.get_template_functions(),
-            global_vars={rendering_composite_name:'1'}).strip()
+            global_vars={rendering_composite_name:'1'}, database=db).strip()
         with self._lock:
             self._render_cache[book_id] = ans
         return ans
@@ -404,8 +406,9 @@ class CompositeField(OneToOneField):
 
 class OnDeviceField(OneToOneField):
 
-    def __init__(self, name, table, bools_are_tristate, get_template_functions):
+    def __init__(self, name, table, bools_are_tristate, get_template_functions, db_weakref):
         self.name = name
+        self.db_weakref = db_weakref
         self.book_on_device_func = None
         self.is_multiple = False
         self.cache = {}
@@ -799,7 +802,7 @@ class TagsField(ManyToManyField):
         return ans
 
 
-def create_field(name, table, bools_are_tristate, get_template_functions):
+def create_field(name, table, bools_are_tristate, get_template_functions, db_weakref):
     cls = {
             ONE_ONE: OneToOneField,
             MANY_ONE: ManyToOneField,
@@ -819,4 +822,4 @@ def create_field(name, table, bools_are_tristate, get_template_functions):
         cls = CompositeField
     elif table.metadata['datatype'] == 'series':
         cls = SeriesField
-    return cls(name, table, bools_are_tristate, get_template_functions)
+    return cls(name, table, bools_are_tristate, get_template_functions, db_weakref)
