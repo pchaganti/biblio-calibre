@@ -101,7 +101,7 @@ class TagDelegate(QStyledItemDelegate):  # {{{
 
     def text_color(self, hover, palette) -> QColor:
         if QApplication.instance().is_dark_theme and hover:
-                return QColor(Qt.GlobalColor.black)
+            return QColor(Qt.GlobalColor.black)
         return palette.color(QPalette.ColorRole.WindowText)
 
     def draw_text(self, style, painter, option, widget, index, item):
@@ -253,7 +253,7 @@ class TagDelegate(QStyledItemDelegate):  # {{{
             editor = EnLineEdit(parent)
         return editor
 
-    # }}}
+# }}}
 
 
 class TagsView(QTreeView):  # {{{
@@ -300,7 +300,7 @@ class TagsView(QTreeView):  # {{{
         self.pane_is_visible = False
         self.current_expansion = None
         self.search_icon = QIcon.ic('search.png')
-        self.search_copy_icon = QIcon.ic("search_copy_saved.png")
+        self.search_copy_icon = QIcon.ic('search_copy_saved.png')
         self.user_category_icon = QIcon.ic('tb_folder.png')
         self.edit_metadata_icon = QIcon.ic('edit_input.png')
         self.delete_icon = QIcon.ic('list_remove.png')
@@ -708,11 +708,11 @@ class TagsView(QTreeView):  # {{{
                                        # global_vars=None, all_functions=None, builtin_functions=None,
                                        # python_context_object=None, dialog_number=None,
                                        formatter=EvalFormatter, icon_dir='tb_icons/template_icons')
-                    if d.exec():
+                    if d.exec() == QDialog.DialogCode.Accepted:
                         self._model.set_value_icon(key, TEMPLATE_ICON_INDICATOR, d.rule[2], False)
                         self.recount()
                     return
-                (icon_file_name, for_children) = extra if extra is not None else (None, None)
+                icon_file_name, for_children = extra if extra is not None else (None, None)
                 item_val, desired_file_name = make_icon_name(key, index)
                 if icon_file_name is None:
                     # User wants to specify a specific icon
@@ -722,22 +722,24 @@ class TagsView(QTreeView):  # {{{
                                     _('Change icon for: %s')%key, filters=[
                                     ('Images', ['png', 'gif', 'jpg', 'jpeg'])],
                                 all_files=False, select_only_single_file=True)
-                        if path:
-                            path = path[0]
-                            p = QIcon(path).pixmap(QSize(128, 128))
-                            d = os.path.join(config_dir, 'tb_icons')
-                            if not os.path.exists(d):
-                                os.makedirs(d)
-                            with open(os.path.join(d, icon_file_name), 'wb') as f:
-                                f.write(pixmap_to_data(p, format='PNG'))
+                        if not path:
+                            return
+                        path = path[0]
+                        p = QIcon(path).pixmap(QSize(128, 128))
+                        d = os.path.join(config_dir, 'tb_icons')
+                        if not os.path.exists(d):
+                            os.makedirs(d)
+                        with open(os.path.join(d, icon_file_name), 'wb') as f:
+                            f.write(pixmap_to_data(p, format='PNG'))
                     except:
                         traceback.print_exc()
+                        return
                 else:
                     # Already have an icon. User wants to change whether it applies to children
                     icon_file_name = desired_file_name
-                if index is None: # category icon
+                if index is None:  # category icon
                     self._model.set_custom_category_icon(key, str(icon_file_name))
-                else: # value icon
+                else:  # value icon
                     self._model.set_value_icon(key, item_val, icon_file_name, bool(for_children))
                 self.recount()
                 return
@@ -817,7 +819,7 @@ class TagsView(QTreeView):  # {{{
             if action == 'search':
                 self._toggle(index, set_to=search_state)
                 return
-            if action == "raw_search":
+            if action == 'raw_search':
                 get_gui().get_saved_search_text(search_name='search:' + key)
                 return
             if action == 'add_to_category':
@@ -1283,7 +1285,7 @@ class TagsView(QTreeView):  # {{{
                 if key not in ('search', 'formats') and not key.startswith('@'):
                     def get_rule_data(tag, key):
                         if tag is None:
-                            return (None, None, None)
+                            return None, None, None
                         name = tag.original_name
                         cat_rules = self._model.value_icons.get(key, {})
                         icon_name, for_child = cat_rules.get(name, (None, None))
@@ -1404,7 +1406,7 @@ class TagsView(QTreeView):  # {{{
             for p in paths:
                 # Now add the menu items
                 m.addAction(self.minus_icon,
-                            _("Collapse {0}").format(p[0]), partial(self.collapse_node, p[1]))
+                            _('Collapse {0}').format(p[0]), partial(self.collapse_node, p[1]))
             m.addAction(self.minus_icon, _('Collapse all'), self.collapseAll)
 
         # Ask plugins if they have any actions to add to the context menu
@@ -1637,5 +1639,4 @@ class TagsView(QTreeView):  # {{{
                 if not expansion[0]:
                     self.collapse(idx)
 
-
-    # }}}
+# }}}
