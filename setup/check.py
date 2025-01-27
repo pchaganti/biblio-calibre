@@ -11,7 +11,7 @@ import json
 import os
 import subprocess
 
-from setup import Command, build_cache_dir, dump_json, edit_file, require_clean_git, require_git_master
+from setup import Command, build_cache_dir, dump_json, edit_file
 
 
 class Message:
@@ -114,7 +114,7 @@ class Check(Command):
             for i, f in enumerate(dirty_files):
                 self.info('\tChecking', f)
                 if self.file_has_errors(f):
-                    self.info('{} files left to check'.format(len(dirty_files) - i - 1))
+                    self.info(f'{len(dirty_files) - i - 1} files left to check')
                     try:
                         edit_file(f)
                     except FileNotFoundError:

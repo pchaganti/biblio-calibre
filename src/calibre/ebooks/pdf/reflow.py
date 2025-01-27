@@ -236,7 +236,7 @@ class Text(Element):
         # Or assume any gap = a space?
         if (self.top <= other.top and self.bottom >= other.bottom) \
           and abs(other.left - self.right) < 2.0:
-          # and abs(other.left - self.right) < self.average_character_width / 3.0:
+            # and abs(other.left - self.right) < self.average_character_width / 3.0:
             has_gap = 0
         else:  # Insert n spaces to fill gap.  Use TAB?  Columns?
             if other.left < self.right:
@@ -284,7 +284,7 @@ class Text(Element):
         elif self.font_size_em != other.font_size_em \
           and self.font_size_em != 1.00:
             if re.match(r'<span', self.raw) is None:
-                self.raw = '<span style="font-size:%sem">%s</span>'%(str(self.font_size_em),self.raw)
+                self.raw = f'<span style="font-size:{self.font_size_em!s}em">{self.raw}</span>'
             # Try to allow for a very large initial character
             elif len(self.text_as_string) <= 2 \
               and self.font_size_em >= other.font_size_em * 2.0:
@@ -467,7 +467,7 @@ class Interval:
         return self.left == other.left and self.right == other.right
 
     def __hash__(self):
-        return hash('(%f,%f)'%self.left, self.right)
+        return hash('({:f},{:f})'.format(*self.left), self.right)
 
 
 class Column:
@@ -546,13 +546,13 @@ class Box(list):
         self.tag = type
 
     def to_html(self):
-        ans = ['<%s>'%self.tag]
+        ans = [f'<{self.tag}>']
         for elem in self:
             if isinstance(elem, int):
                 ans.append('<a name="page_%d"/>'%elem)
             else:
                 ans.append(elem.to_html()+' ')
-        ans.append('</%s>'%self.tag)
+        ans.append(f'</{self.tag}>')
         return ans
 
 
@@ -644,7 +644,7 @@ class Region:
                 col = most_suitable_column(elem)
                 if self.opts.verbose > 3:
                     idx = self.columns.index(col)
-                    self.log.debug('Absorbing singleton %s into column'%elem.to_html(),
+                    self.log.debug(f'Absorbing singleton {elem.to_html()} into column',
                             idx)
                 col.add(elem)
 
@@ -782,7 +782,7 @@ class Page:
               or text.top > self.height \
               or text.left > self.left+self.width \
               or text.left < self.left:
-              # and re.match(r'href=', text.raw) is None:
+                # and re.match(r'href=', text.raw) is None:
                 self.texts.remove(text)
             elif  (self.opts.pdf_header_skip <= 0 or text.top >= self.opts.pdf_header_skip) \
               and (self.opts.pdf_footer_skip <= 0 or text.top <= self.opts.pdf_footer_skip):
@@ -960,19 +960,19 @@ class Page:
               and lmargin >= rmargin - rmargin*CENTER_FACTOR \
               and lmargin <= rmargin + rmargin*CENTER_FACTOR \
               and '"float:right"' not in t.raw:
-               # and t.left + t.width + t.left >= self.width + l_offset - t.average_character_width \
-               # and t.left + t.width + t.left <= self.width + l_offset + t.average_character_width:
+                # and t.left + t.width + t.left >= self.width + l_offset - t.average_character_width \
+                # and t.left + t.width + t.left <= self.width + l_offset + t.average_character_width:
                 t.align = 'C'
             # Right aligned if left > FACTOR% of right
             elif lmargin > indent_max \
               and lmargin > rmargin*RIGHT_FACTOR:
-              # and t.right >= self.width - t.average_character_width:
+                # and t.right >= self.width - t.average_character_width:
                 # What about right-aligned but indented on right?
                 # What about indented rather than right-aligned?
                 t.align = 'R'
             if not self.contents:
-              # We can get <a href=...Chapter...  Should this check be done?
-              # if 'href=' not in t.raw:
+                # We can get <a href=...Chapter...  Should this check be done?
+                # if 'href=' not in t.raw:
                 # Check for Roman numerals as the only thing on a line
                 if re.match(r'^\s*[iIxXvV]+\s*$', t.text_as_string) is not None:
                     t.tag = 'h3'
@@ -1082,7 +1082,7 @@ class Page:
                         if last_frag is not None \
                           and stats.para_space > 0 \
                           and frag.bottom - last_frag.bottom > stats.para_space*SECTION_FACTOR:
-                          # and frag.top - last_frag.bottom > frag.height + stats.line_space + (stats.line_space*LINE_FACTOR):
+                            # and frag.top - last_frag.bottom > frag.height + stats.line_space + (stats.line_space*LINE_FACTOR):
                             frag.blank_line_before = 1
                 last_frag = frag
                 tind += 1
@@ -1317,7 +1317,7 @@ class Page:
         for text in self.texts:
             text.font_size_em = self.font_map[text.font.id].size_em
             if text.font_size_em != 0.00 and text.font_size_em != 1.00:
-                text.raw = '<span style="font-size:%sem">%s</span>'%(str(text.font_size_em),text.raw)
+                text.raw = f'<span style="font-size:{text.font_size_em!s}em">{text.raw}</span>'
 
     def second_pass(self, stats, opts):
 
@@ -1377,7 +1377,7 @@ class Page:
                 iind += 1
             if text.blank_line_before > 0:
                 ans.append('<p style="text-align:center">&#160;</p>')
-            ans.append('<%s'%text.tag)
+            ans.append(f'<{text.tag}')
             # Should be only for Headings, but there is no guarantee that the heading will be recognised
             # So put in an ID once per page in case the Contents references it
             #   and  text.tag[0] == 'h'
@@ -1404,7 +1404,7 @@ class Page:
                 ans[-1] += 'em"'
             ans[-1] += '>'
             ans[-1] += text.to_html()
-            ans[-1] += '</%s>'%text.tag  # Closing tag
+            ans[-1] += f'</{text.tag}>'  # Closing tag
             if text.blank_line_after > 0:
                 ans.append('<p style="text-align:center">&#160;</p>')
 
@@ -1752,7 +1752,7 @@ class PDFDocument:
         bcount = 0
         for b in self.bottoms:
             if bcount < self.bottoms[b]:
-              # and b > self.stats.bottom*0.9:
+                # and b > self.stats.bottom*0.9:
                 bcount = self.bottoms[b]
             if b > self.stats.bottom:
                 self.stats.bottom = b
