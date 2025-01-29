@@ -164,8 +164,13 @@ class TagTreeItem:  # {{{
                             cc = self.category_custom_icons.get(self.tag.category, None)
                     else:
                         cc = self.icon
-        elif self.type == self.CATEGORY and gprefs['tag_browser_show_category_icons']:
-            cc = self.category_custom_icons.get(self.category_key, None)
+        elif self.type == self.CATEGORY:
+            if self.parent.type == self.ROOT:
+                if gprefs['tag_browser_show_category_icons']:
+                    cc = self.category_custom_icons.get(self.category_key, None)
+            else:
+                if gprefs['tag_browser_show_value_icons']:
+                    cc = self.category_custom_icons.get(self.category_key, None)
         self.icon_state_map[0] = cc or QIcon()
 
     def __str__(self):
@@ -1968,7 +1973,7 @@ class TagsModel(QAbstractItemModel):  # {{{
                     if tag.name and tag.name[0] in stars:  # char is a star or a half. Assume rating
                         rnum = len(tag.name)
                         if tag.name.endswith(stars[-1]):
-                            rnum = '%s.5' % (rnum - 1)
+                            rnum = f'{rnum-1}.5'
                         ans.append(f'{prefix}{category}:{rnum}')
                     else:
                         name = tag.original_name
