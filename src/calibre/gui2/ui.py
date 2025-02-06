@@ -1237,6 +1237,7 @@ class Main(MainWindow, MainWindowMixin, DeviceMixin, EmailMixin,  # {{{
         return True
 
     def shutdown(self, write_settings=True):
+        timed_print('Shutdown starting...')
         self.shutting_down = True
         if hasattr(self.library_view, 'connect_to_book_display_timer'):
             self.library_view.connect_to_book_display_timer.stop()
@@ -1298,19 +1299,18 @@ class Main(MainWindow, MainWindowMixin, DeviceMixin, EmailMixin,  # {{{
         self.library_view.model().close()
 
         try:
-            try:
-                if self.content_server is not None:
-                    # If the Content server has any sockets being closed then
-                    # this can take quite a long time (minutes). Tell the user that it is
-                    # happening.
-                    self.show_shutdown_message(
-                        _('Shutting down the Content server. This could take a while...'))
-                    s = self.content_server
-                    self.content_server = None
-                    s.exit()
-            except:
-                pass
+            if self.content_server is not None:
+                # If the Content server has any sockets being closed then
+                # this can take quite a long time (minutes). Tell the user that it is
+                # happening.
+                self.show_shutdown_message(
+                    _('Shutting down the Content server. This could take a while...'))
+                s = self.content_server
+                self.content_server = None
+                s.exit()
         except KeyboardInterrupt:
+            pass
+        except Exception:
             pass
         self.hide_windows()
         if self._spare_pool is not None:
@@ -1324,6 +1324,11 @@ class Main(MainWindow, MainWindowMixin, DeviceMixin, EmailMixin,  # {{{
         wait_for_cleanup()
         wait_for_stop()
         self.shutdown_completed.emit()
+        timed_print('Shutdown complete, quitting...')
+        try:
+            sys.stdout.flush()  # Make sure any buffered prints are written for debug mode
+        except Exception:
+            pass
         return True
 
     def run_wizard(self, *args):
