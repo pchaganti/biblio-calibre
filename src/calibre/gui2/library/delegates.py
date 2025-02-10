@@ -93,15 +93,7 @@ class UpdateEditorGeometry:
             new_width += r.width()
 
         # Compute the maximum we can show if we consume the entire viewport
-        pin_view = self.table_widget.pin_view
-        is_pin_view, p = False, editor.parent()
-        while p is not None:
-            if p is pin_view:
-                is_pin_view = True
-                break
-            p = p.parent()
-
-        max_width = (pin_view if is_pin_view else self.table_widget).viewport().rect().width()
+        max_width = self.parent().viewport().rect().width()
         # What we have to display might not fit. If so, adjust down
         new_width = new_width if new_width < max_width else max_width
 
@@ -206,34 +198,15 @@ def get_val_for_textlike_columns(index_):
 
 class StyledItemDelegate(QStyledItemDelegate):
     '''
-    When closing an editor and opening another, Qt sometimes picks what appears
-    to be a random line and column for the second editor. This function checks
-    that the current index for a new editor is the same as the current view. If
-    it isn't then the editor shouldn't be opened.
-
     Set the flag ignore_kb_mods_on_edit before opening an editor if you don't
     want keyboard modifiers taken into account, for example when using Shift-Tab
     as a backtab when editing cells. This prevents opening dialogs by mistake.
     See giu2.library.views.closeEditor() for an example.
     '''
-
-    def __init__(self, *args, **kwargs):
-        super().__init__(*args, **kwargs)
-        self.table_widget = args[0]
-        # Set this to True here. It is up the the subclasses to set it to False if needed.
-        self.is_editable_with_tab = True
-        self.ignore_kb_mods_on_edit = False
+    is_editable_with_tab = True  # sub-classes set to False is needed
+    ignore_kb_mods_on_edit = False
 
     def createEditor(self, parent, option, index):
-        current_indices = [self.table_widget.currentIndex()]
-        if hasattr(self.table_widget, 'pin_view'):
-            current_indices.append(self.table_widget.pin_view.currentIndex())
-        if index not in current_indices:
-            idx = self.table_widget.currentIndex()
-            print(f'createEditor idx err: delegate={self.__class__.__name__}. '
-                  f'cur idx=({idx.row()}, {idx.column()}), '
-                  f'given idx=({index.row()}, {index.column()})')
-            return None
         e = self.create_editor(parent, option, index)
         return e
 
@@ -259,7 +232,6 @@ class RatingDelegate(StyledItemDelegate, UpdateEditorGeometry):  # {{{
     def __init__(self, *args, **kwargs):
         StyledItemDelegate.__init__(self, *args)
         self.is_half_star = kwargs.get('is_half_star', False)
-        self.table_widget = args[0]
         self.rf = QFont(rating_font())
         self.em = Qt.TextElideMode.ElideMiddle
         delta = 0
@@ -305,7 +277,6 @@ class DateDelegate(StyledItemDelegate, UpdateEditorGeometry):  # {{{
     def __init__(self, parent, tweak_name='gui_timestamp_display_format',
             default_format='dd MMM yyyy'):
         StyledItemDelegate.__init__(self, parent)
-        self.table_widget = parent
         self.tweak_name = tweak_name
         self.format = tweaks[self.tweak_name]
         if self.format is None:
@@ -341,7 +312,6 @@ class PubDateDelegate(StyledItemDelegate, UpdateEditorGeometry):  # {{{
     def __init__(self, *args, **kwargs):
         StyledItemDelegate.__init__(self, *args, **kwargs)
         self.format = tweaks['gui_pubdate_display_format']
-        self.table_widget = args[0]
         if self.format is None:
             self.format = 'MMM yyyy'
 
@@ -380,7 +350,6 @@ class TextDelegate(StyledItemDelegate, UpdateEditorGeometry, EditableTextDelegat
         auto-complete will be used.
         '''
         StyledItemDelegate.__init__(self, parent)
-        self.table_widget = parent
         self.auto_complete_function = None
 
     def set_auto_complete_function(self, f):
@@ -427,19 +396,16 @@ class CompleteDelegate(StyledItemDelegate, UpdateEditorGeometry, EditableTextDel
         self.sep = sep
         self.items_func_name = items_func_name
         self.space_before_sep = space_before_sep
-        self.table_widget = parent
-
-    def set_database(self, db):
-        self.db = db
 
     def create_editor(self, parent, option, index):
-        if self.db and hasattr(self.db, self.items_func_name):
+        db = index.model().db
+        if hasattr(db, self.items_func_name):
             m = index.model()
             col = m.column_map[index.column()]
             # If shifted, bring up the tag editor instead of the line editor.
             if not self.ignore_kb_mods_on_edit and check_key_modifier(Qt.KeyboardModifier.ShiftModifier) and col != 'authors':
                 key = col if m.is_custom_column(col) else None
-                d = TagEditor(parent, self.db, m.id(index.row()), key=key)
+                d = TagEditor(parent, db, m.id(index.row()), key=key)
                 if d.exec() == QDialog.DialogCode.Accepted:
                     m.setData(index, self.sep.join(d.tags), Qt.ItemDataRole.EditRole)
                 return None
@@ -452,10 +418,10 @@ class CompleteDelegate(StyledItemDelegate, UpdateEditorGeometry, EditableTextDel
             if self.sep == '&':
                 editor.set_add_separator(tweaks['authors_completer_append_separator'])
             if not m.is_custom_column(col):
-                all_items = getattr(self.db, self.items_func_name)()
+                all_items = getattr(db, self.items_func_name)()
             else:
-                all_items = list(self.db.all_custom(
-                    label=self.db.field_metadata.key_to_label(col)))
+                all_items = list(db.all_custom(
+                    label=db.field_metadata.key_to_label(col)))
             editor.update_items_cache(all_items)
         else:
             editor = EnLineEdit(parent)
@@ -474,7 +440,6 @@ class LanguagesDelegate(StyledItemDelegate, UpdateEditorGeometry):  # {{{
 
     def __init__(self, parent):
         StyledItemDelegate.__init__(self, parent)
-        self.table_widget = parent
 
     def create_editor(self, parent, option, index):
         editor = LanguagesEdit(parent=parent)
@@ -501,7 +466,6 @@ class CcDateDelegate(StyledItemDelegate, UpdateEditorGeometry):  # {{{
 
     def __init__(self, parent):
         StyledItemDelegate.__init__(self, parent)
-        self.table_widget = parent
 
     def set_format(self, _format):
         if not _format:
@@ -551,7 +515,6 @@ class CcTextDelegate(StyledItemDelegate, UpdateEditorGeometry, EditableTextDeleg
 
     def __init__(self, parent):
         StyledItemDelegate.__init__(self, parent)
-        self.table_widget = parent
 
     def create_editor(self, parent, option, index):
         m = index.model()
@@ -599,7 +562,6 @@ class CcLongTextDelegate(StyledItemDelegate):  # {{{
 
     def __init__(self, parent):
         StyledItemDelegate.__init__(self, parent)
-        self.table_widget = parent
         self.document = QTextDocument()
         self.is_editable_with_tab = False
 
@@ -627,7 +589,6 @@ class CcMarkdownDelegate(StyledItemDelegate):  # {{{
 
     def __init__(self, parent):
         super().__init__(parent)
-        self.table_widget = parent
         self.document = QTextDocument()
         self.is_editable_with_tab = False
 
@@ -681,7 +642,6 @@ class CcNumberDelegate(StyledItemDelegate, UpdateEditorGeometry):  # {{{
 
     def __init__(self, parent):
         StyledItemDelegate.__init__(self, parent)
-        self.table_widget = parent
 
     def create_editor(self, parent, option, index):
         m = index.model()
@@ -732,7 +692,6 @@ class CcEnumDelegate(StyledItemDelegate, UpdateEditorGeometry):  # {{{
 
     def __init__(self, parent):
         StyledItemDelegate.__init__(self, parent)
-        self.table_widget = parent
         self.longest_text = ''
 
     def create_editor(self, parent, option, index):
@@ -780,7 +739,6 @@ class CcCommentsDelegate(StyledItemDelegate):  # {{{
 
     def __init__(self, parent):
         StyledItemDelegate.__init__(self, parent)
-        self.table_widget = parent
         self.document = QTextDocument()
         self.is_editable_with_tab = False
 
@@ -843,7 +801,6 @@ class CcBoolDelegate(StyledItemDelegate, UpdateEditorGeometry):  # {{{
         '''
         self.nuke_option_data = False
         StyledItemDelegate.__init__(self, parent)
-        self.table_widget = parent
 
     def create_editor(self, parent, option, index):
         editor = DelegateCB(parent)
@@ -906,7 +863,6 @@ class CcTemplateDelegate(StyledItemDelegate):  # {{{
         Delegate for composite custom_columns.
         '''
         StyledItemDelegate.__init__(self, parent)
-        self.table_widget = parent
         self.disallow_edit = gprefs['edit_metadata_templates_only_F2_on_booklist']
         self.is_editable_with_tab = False
 
