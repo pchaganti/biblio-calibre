@@ -14,8 +14,11 @@
 
 import re
 
-from calibre.ebooks.oeb.base import XHTML, XPath
+from lxml import etree
+
+from calibre.ebooks.oeb.base import XHTML, XPath, escape_cdata
 from calibre.ebooks.oeb.parse_utils import barename, merge_multiple_html_heads_and_bodies
+from calibre.ebooks.oeb.polish.parsing import parse
 from calibre.ebooks.oeb.polish.tts import lang_for_elem
 from calibre.ebooks.oeb.polish.utils import extract, insert_self_closing
 from calibre.spell.break_iterator import sentence_positions
@@ -24,12 +27,17 @@ from calibre.utils.localization import canonicalize_lang, get_lang
 KOBO_STYLE_HACKS = 'kobostylehacks'
 OUTER_DIV_ID = 'book-columns'
 INNER_DIV_ID = 'book-inner'
+KOBO_SPAN_CLASS = 'koboSpan'
 SKIPPED_TAGS = frozenset((
-    'script', 'style', 'atom', 'pre', 'audio', 'video', 'svg', 'math'
+    '', 'script', 'style', 'atom', 'pre', 'audio', 'video', 'svg', 'math'
 ))
 BLOCK_TAGS = frozenset((
     'p', 'ol', 'ul', 'table', 'h1', 'h2', 'h3', 'h4', 'h5', 'h6',
 ))
+
+
+def outer_html(node):
+    return etree.tostring(node, encoding='unicode', with_tail=False)
 
 
 def add_style(root, css='div#book-inner { margin-top: 0; margin-bottom: 0; }', cls=KOBO_STYLE_HACKS) -> bool:
@@ -96,9 +104,9 @@ def add_kobo_spans(inner, root_lang):
     def kobo_span(parent):
         nonlocal paranum, segnum
         segnum += 1
-        return parent.makeelement(span_tag_name, attrib={'class': 'koboSpan', 'id': f'kobo.{paranum}.{segnum}'})
+        return parent.makeelement(span_tag_name, attrib={'class': KOBO_SPAN_CLASS, 'id': f'kobo.{paranum}.{segnum}'})
 
-    def wrap_text_in_spans(text: str, parent, at: int, lang: str) -> str | None:
+    def wrap_text_in_spans(text: str, parent: etree.Element, after_child: etree.ElementBase, lang: str) -> str | None:
         nonlocal increment_next_para, paranum, segnum
         if increment_next_para:
             paranum += 1
@@ -108,6 +116,10 @@ def add_kobo_spans(inner, root_lang):
         ws = None
         if num := len(text) - len(stripped):
             ws = text[:num]
+        try:
+            at = 0 if after_child is None else parent.index(after_child) + 1
+        except ValueError:  # wrapped child
+            at = parent.index(after_child.getparent()) + 1
         if at:
             parent[at-1].tail = ws
         else:
@@ -116,31 +128,63 @@ def add_kobo_spans(inner, root_lang):
             s = kobo_span(parent)
             s.text = stripped[pos:pos+sz]
             parent.insert(at, s)
+            at += 1
+
+    def wrap_child(child: etree.Element) -> etree.Element:
+        nonlocal increment_next_para, paranum, segnum
+        increment_next_para = False
+        paranum += 1
+        segnum = 0
+        node = child.getparent()
+        idx = node.index(child)
+        w = kobo_span(node)
+        node[idx] = w
+        w.append(child)
+        w.tail = child.tail
+        child.tail = child.text = None
+        return w
 
     while stack:
         node, parent, tagname, node_lang = p()
-        if parent is not None:
+        if parent is not None:  # tail text
             wrap_text_in_spans(node, parent, tagname, node_lang)
+            continue
+        if tagname == 'img':
+            wrap_child(node)
             continue
         if not increment_next_para and tagname in BLOCK_TAGS:
             increment_next_para = True
-        if node.text:
-            wrap_text_in_spans(node.text, node, 0, node_lang)
-        for i, child in enumerate(reversed(node)):
-            i = len(node) - 1 - i
+        for child in reversed(node):
+            child_name = barename(child.tag).lower() if isinstance(child.tag, str) else ''
             if child.tail:
-                a((child.tail, node, i + 1, node_lang))
-            if isinstance(child.tag, 'str'):
-                child_name = barename(child.tag).lower()
-                if child_name == 'img':
-                    increment_next_para = False
-                    paranum += 1
-                    segnum = 0
-                    w = kobo_span(node)
-                    w.append(child)
-                    node[i] = w
-                elif child_name not in SKIPPED_TAGS:
-                    a((child, None, child_name, lang_for_elem(child, node_lang)))
+                a((child.tail, node, child, node_lang))
+            if child_name not in SKIPPED_TAGS:
+                a((child, None, child_name, lang_for_elem(child, node_lang)))
+        if node.text:
+            wrap_text_in_spans(node.text, node, None, node_lang)
+
+
+def unwrap(span: etree.Element) -> None:
+    p = span.getparent()
+    idx = p.index(span)
+    del p[idx]
+    if len(span):
+        p.insert(idx, span[0])
+    else:
+        text = span.text + (span.tail or '')
+        if idx > 0:
+            idx -= 1
+            p[idx].tail = (p[idx].tail or '') + text
+        else:
+            p.text = (p.text or '') + text
+
+
+def remove_kobo_spans(body: etree.Element) -> bool:
+    found = False
+    for span in XPath(f'//h:span[@class="{KOBO_SPAN_CLASS}" and starts-with(@id, "kobo.")]')(body):
+        unwrap(span)
+        found = True
+    return found
 
 
 def add_kobo_markup_to_html(root, metadata_lang):
@@ -155,13 +199,27 @@ def remove_kobo_markup_from_html(root):
     remove_kobo_styles(root)
     for body in XPath('./h:body')(root):
         unwrap_body_contents(body)
+        remove_kobo_spans(body)
 
 
-def kepubify_html(root, metadata_lang='en'):
+def serialize_html(root) -> bytes:
+    escape_cdata(root)
+    ans = etree.tostring(root, encoding='unicode', xml_declaration=False, pretty_print=False, with_tail=False)
+    ans = ans.replace('\xa0', '&#160;')
+    return b"<?xml version='1.0' encoding='utf-8'?>\n" + ans.encode('utf-8')
+
+
+def kepubify_parsed_html(root, metadata_lang: str = 'en'):
     remove_kobo_markup_from_html(root)
     merge_multiple_html_heads_and_bodies(root)
     add_kobo_markup_to_html(root, metadata_lang)
 
 
-def kepubify(container):
+def kepubify_html_data(raw: str | bytes, metadata_lang: str = 'en'):
+    root = parse(raw)
+    kepubify_parsed_html(root, metadata_lang)
+    return root
+
+
+def kepubify_container(container):
     lang = container.mi.language
